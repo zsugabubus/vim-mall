@@ -1,4 +1,4 @@
-" LICENSE: GPLv3 or later
+" LICENSE: WTFPL
 " AUTHOR: zsugabubus
 if !hasmapto('<Plug>(Mall)')
 	vmap <silent><unique> gl <Plug>(Mall)

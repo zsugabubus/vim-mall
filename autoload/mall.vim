@@ -1,4 +1,4 @@
-" LICENSE: GPLv3 or later
+" LICENSE: WTFPL
 " AUTHOR: zsugabubus
 function! s:noop(mode) abort
 	" An empty operator function that just needed to execute supplied motion
