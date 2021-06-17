@@ -1,126 +1,135 @@
 " LICENSE: GPLv3 or later
 " AUTHOR: zsugabubus
 function! s:noop(mode) abort
+	" An empty operator function that just needed to execute supplied motion
+	" multiple times.
 endfunction
-function! mall#align(mode) abort
-	let view = winsaveview()
-	let start_lnum = line("'<")
-	let end_lnum = line("'>")
-	let pos = {}
-	let prevpos = {}
 
-	for lnum in range(start_lnum, end_lnum)
-		let prevpos[lnum] = [0, 0, 0, 1]
+" Aligning happens only in text with matching syntax type.
+function s:get_syntax_type(lnum, col) abort
+	return synIDattr(synIDtrans(synID(a:lnum, a:col, 1)), "name") =~? '\vcomment|string'
+endfunction
+
+function s:do_align() abort
+	let fillchar = ' '
+	let lines = {}
+	let offs = {}
+	let cmd = ''
+
+	" If 0, align all columns.
+	if !g:mall_count
+		let g:mall_count = 9999
+	endif
+
+	" Collecting column positions for aligning.
+	for lnum in range(line("'<"), line("'>"))
+		let syntax = s:get_syntax_type(lnum, 1)
+		let lines[lnum] = []
+		let offs[lnum] = 0
+		let oldvcol = 1
+		let oldcol = 1
+		let col = 1
+		while len(lines[lnum]) <# g:mall_count
+			call cursor(lnum, col)
+			if col('.') !=# col
+				break
+			endif
+
+			let ok = 0
+			noautocmd silent! execute "normal! .:let ok = 1\<CR>"
+
+			" Error while moving.
+			if !ok
+				break
+			endif
+
+			let [olnum, ocol] = [line("']"), col("']")]
+			" Moved over line.
+			if olnum !=# lnum || ocol <# col
+				break
+			endif
+			" Stayed in place.
+			if ocol ==# col
+				let col += 1
+				continue
+			endif
+			let col = ocol
+
+			if syntax !=# s:get_syntax_type(lnum, col)
+				continue
+			endif
+
+			let line = strpart(getline(lnum), oldcol - 1, col - oldcol)
+
+			let vcol = virtcol("']")
+			call add(lines[lnum], [line, oldvcol, vcol])
+			let [oldcol, oldvcol] = [col, vcol]
+		endwhile
 	endfor
 
-	set opfunc=<SID>noop
+	let pat = '\v^.{-}\zs\V'.escape(fillchar, '\').'\*\v$'
 
-	let g:mall_count = 3
-	for iter in range(1, get(g:, 'mall_count', 1))
-		echom iter ' >>> ' string(prevpos)
-		for [lnum, lpos] in items(prevpos)
-			let col = lpos[3]
-			while 1
-				call cursor(lnum, col)
-				if col('.') !=# col
-					break
-				endif
+	let index = 0
+	let oldwall = 1
+	while 1
+		" The virtcol columns should be aligned to.
+		let wall = 0
 
-				let ok = 0
-				execute "normal! .:let ok = 1\<CR>"
-				let [olnum, ocol] = [line("']"), col("']")]
+		let any = 0
+		for [lnum, columns] in items(lines)
+			" No more columns for this line.
+			if len(columns) <=# index
+				continue
+			endif
 
-				echom '  ' lnum ':' col ' -> ' olnum ':' ocol  ' ' ok
-				if !ok || olnum !=# lnum
-					break
-				endif
-
-				" Not moved, but succeed.
-				if ocol ==# col
-					let col += 1
-					continue
-				endif
-				let col = ocol
-
-				let skip = synIDattr(synIDtrans(synID(lnum, col, 1)), "name") =~? 'comment|string'
-				if skip
-					continue
-				endif
-
-				let line = strpart(getline(lnum), 0, col - 1)
-				let lastchar = matchstr(line, '\m\W$')
-				if !empty(lastchar)
-					if !exists('fillchar')
-						let fillchar = lastchar
-					elseif fillchar !=# lastchar
-						let fillchar = !&expandtab ? ' ' : "\t"
-					endif
-				endif
-
-				" [position of text, text, negative text offset (over target col), target col]
-				let pos[lnum] = [0, line, 0, col]
-				break
-			endwhile
+			let any = 1
+			let column = columns[index]
+			let segment = column[0]
+			let start = column[1] + offs[lnum]
+			let vcol = start + strdisplaywidth(strpart(segment, 0, match(segment, pat)), start)
+			" echom start '+' strpart(segment, 0, match(segment, pat)) '->' vcol
+			let wall = max([wall, vcol])
 		endfor
-		if !exists('fillchar')
-			let fillchar = !&expandtab ? ' ' : "\t"
+
+		" No more columns to align.
+		if !any
+			break
 		endif
 
-		echom iter ' <<< ' string(pos)
+		" echom 'max width='.wall
+		" echom lines
 
-		let pat = '\v^(.{-})(['.escape("\t ".fillchar, '\').']*)$'
-		for [lnum, info] in items(pos)
-			let [_, left, fill; _] = matchlist(info[1], pat)
-			echom string(info)
-			let info[0] = strdisplaywidth(left, 0) + 1 " The left most column where [3] can be.
-			let info[1] = fill
-			let info[3] = info[0] + strdisplaywidth(fill, info[0] - 1) " Column number (1-based)
-			echom left . 'x'.fill.'y' .string(info)
-
-			if !exists('mostleft')
-				let mostleft = info[0]
-			elseif mostleft <# info[0]
-				let mostleft = info[0]
+		for [lnum, columns] in items(lines)
+			if len(columns) <=# index
+				continue
 			endif
+			let column = columns[index]
+			let endvcol = column[2] + offs[lnum]
+			if endvcol <# wall
+				let cmd .= lnum.'G'.endvcol.'|'.(wall - endvcol).'i'.fillchar."\<Esc>"
+			elseif wall <# endvcol
+				let cmd .= lnum.'G'.endvcol.'|d'.wall.'|'
+			endif
+			let offs[lnum] += wall - endvcol
 		endfor
 
-		let ok = !exists('mostleft')
-		while !ok
-			echom 'Before' mostleft string(pos)
-			let ok = 1
-			for [lnum, info] in items(pos)
-				while info[0] <# mostleft
-					let [_, head, tail; _] = matchlist(info[1].fillchar, '\v\C^(.)(.*)$')
-					let info[0] += strdisplaywidth(head, info[0] - 1)
-					let info[1] = tail
-					if info[3] <# info[0]
-						let info[2] += 1
-					endif
-				endwhile
-				if mostleft <# info[0]
-					let mostleft = info[0]
-					let ok = 0
-					break
-				endif
-			endfor
-		endwhile
+		let index += 1
+	endwhile
 
-		echom 'After' string(pos)
-		let cmd = ''
-		for [lnum, info] in items(pos)
-			if info[3] <# info[0]
-				let cmd .= lnum.'G'.info[3].'|'.info[2].'i'.fillchar."\<Esc>"
-			elseif info[0] <# info[3]
-				let cmd .= lnum.'G'.info[3].'|d'.info[0].'|'
-			endif
-		endfor
-		let prevpos = pos
-		let pos = {}
-		unlet fillchar
-	endfor
+	noautocmd silent! execute "normal! " cmd "\<CR>"
+endfunction
 
-	noautocmd silent! execute "normal! :set noro\<CR>" cmd ':let &ro='.&ro."\<CR>"
+function! mall#align(mode) abort
+	let view = winsaveview()
+	set opfunc=<SID>noop
 
-	set opfunc=g:Mall
-	call winrestview(view)
+	let [oldws, oldve] = [&ws, &ve]
+	try
+		set nowrapscan virtualedit=all
+		call s:do_align()
+	finally
+		set opfunc=mall#align
+		let [&ws, &ve] = [oldws, oldve]
+		call winrestview(view)
+	endtry
 endfunction

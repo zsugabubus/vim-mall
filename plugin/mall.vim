@@ -1,16 +1,17 @@
 " LICENSE: GPLv3 or later
 " AUTHOR: zsugabubus
-if !hasmapto('<Plug>(MallAlign)')
-	vmap <silent><unique> gl <Plug>(MallAlign)
+if !hasmapto('<Plug>(Mall)')
+	vmap <silent><unique> gl <Plug>(Mall)
 endif
 
-silent! vnoremap <silent><unique> <Plug>(MallAlign) :<C-U>let mall_count = v:count1<CR>:<C-U>set opfunc=mall#align<CR>g@
-silent! vmap <silent><unique> <Plug>(MallAlign)/ <Plug>(MallAlign)v/
-silent! vmap <silent><unique> <Plug>(MallAlign): <Plug>(MallAlign)f:
-silent! vmap <silent><unique> <Plug>(MallAlign)= <Plug>(MallAlign)f=
-silent! vmap <silent><unique> <Plug>(MallAlign), <Plug>(MallAlign)f,
-silent! vmap <silent><unique> <Plug>(MallAlign)<Tab> <Plug>(MallAlign)f<Tab>
-silent! vmap <silent><unique> <Plug>(MallAlign)<Space> <Plug>(MallAlign)f<Space>
-silent! vmap <silent><unique> <Plug>(MallAlign)<bar> <Plug>(MallAlign)f<bar>
-silent! vmap <silent><unique> <Plug>(MallAlign)& <Plug>(MallAlign)f&
-silent! vmap <silent><unique> <Plug>(MallAlign)\ <Plug>(MallAlign)f\
+silent! vnoremap <silent><unique> <Plug>(Mall) :<C-U>let mall_count = v:count<CR>:<C-U>set opfunc=mall#align<CR>g@
+
+" Align non-whitespace after pattern.
+function s:a(pat)
+	return '/\m'.a:pat.'\s*\zs\s<CR>'
+endfunction
+
+for s:pec in ['vn', 'vN', 'v/', 'v?', [':', s:a(':')], ['=', '/\m\s\?=<CR>'], 'f&', [',', s:a(',')], 'f\\', 'f<Tab>', 'f<Space>', 'f<bar>']
+	let [s:from, s:to] = type(s:pec) ==# v:t_string ? [s:pec[1:], s:pec] : s:pec
+	execute 'silent! vmap <silent><unique> <Plug>(Mall)'.s:from.' <Plug>(Mall)'.s:to
+endfor
